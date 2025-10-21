@@ -179,10 +179,11 @@ impl Peer {
                         .parent
                         .upgrade()
                         .unwrap();
-                    let mut net = parent
+                    let mut parent = parent
                         .lock()
                         .await;
-                    net.broadcast(Request::Block(block))
+                    parent
+                        .broadcast(Request::Block(block))
                         .await;
                 }
             },
@@ -192,10 +193,10 @@ impl Peer {
                         .parent
                         .upgrade()
                         .unwrap();
-                    let net = parent
+                    let parent = parent
                         .lock()
                         .await;
-                    let mut self_bc = net
+                    let mut self_bc = parent
                         .blockchain
                         .lock()
                         .await;
@@ -211,17 +212,18 @@ impl Peer {
                         .parent
                         .upgrade()
                         .unwrap();
-                    let mut net = parent
+                    let mut parent = parent
                         .lock()
                         .await;
                     let bc = {
-                        let guard = net
+                        let guard = parent
                             .blockchain
                             .lock()
                             .await;
                         guard.clone()
                     };
-                    net.broadcast(Request::Ibd(Some(bc)))
+                    parent
+                        .broadcast(Request::Ibd(Some(bc)))
                         .await;
                 }
             },
