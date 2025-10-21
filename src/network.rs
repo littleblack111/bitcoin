@@ -25,8 +25,8 @@ use crate::{
 #[derive(Deserialize, Serialize, Clone)]
 // Make possible to take borrowed so we dont need to clone everything
 pub enum Request {
-    Block(Block),
-    Ibd(Option<BlockChain>),
+    Block(Arc<Block>),
+    Ibd(Option<Arc<BlockChain>>),
 }
 
 #[derive(Default)]
@@ -250,7 +250,7 @@ impl Peer {
 
     async fn handle(parent: Arc<Mutex<Network>>, req: Request) {
         match req {
-            Request::Block(mut block) => {
+            Request::Block(block) => {
                 if block
                     .pow
                     .is_some()
@@ -269,11 +269,11 @@ impl Peer {
                     };
                     bc.lock()
                         .await
-                        .store(block)
+                        .store((*block).clone())
                 } else {
                     println!("Mining new block for transaction: {:#?}", block.trans);
-                    block
-                        .calc_set_pow()
+                    let mut mine = (*block).clone();
+                    mine.calc_set_pow()
                         .await;
                     {
                         let self_bc = {
@@ -286,9 +286,9 @@ impl Peer {
                         self_bc
                             .lock()
                             .await
-                            .store(block.clone());
+                            .store(mine.clone());
                     }
-                    Network::broadcast(parent, Request::Block(block)).await;
+                    Network::broadcast(parent, Request::Block(Arc::new(mine))).await;
                 }
             }
             Request::Ibd(bc) => match bc {
@@ -318,8 +318,8 @@ impl Peer {
                             }))
                     {
                         println!("Setting IBD to {:#?} from remote", bc);
-                        *self_bc = bc;
-                    } else if *self_bc != bc {
+                        *self_bc = (*bc).clone();
+                    } else if *self_bc != *bc {
                         eprintln!("Remote IBD broadcast did not match ours, {:#?} vs. {:#?}", bc, self_bc);
                     }
                 }
@@ -341,7 +341,7 @@ impl Peer {
                         return;
                     }
                     println!("Broadcasting as requested"); // TODO: log requester
-                    Network::broadcast(parent, Request::Ibd(Some(bc))).await;
+                    Network::broadcast(parent, Request::Ibd(Some(Arc::new(bc)))).await;
                 }
             },
         }

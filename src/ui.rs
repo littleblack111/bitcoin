@@ -1,4 +1,4 @@
-use std::sync::Weak;
+use std::sync::{Arc, Weak};
 
 use bitcoin::{
     client::Client,
@@ -42,7 +42,7 @@ impl Ui {
                 .upgrade()
                 .unwrap();
             let block = Network::new_block(net, trans).await;
-            return Some(Request::Block(block));
+            return Some(Request::Block(Arc::new(block)));
         }
 
         if cmd[0] == "bc" {
