@@ -225,7 +225,7 @@ impl Peer {
             Request::Block(mut block) => {
                 if !block
                     .pow
-                    .is_empty()
+                    .is_none()
                 {
                     if !block.verify_pow() {
                         eprintln!("Rejecting remote block, POW verification failed"); // TODO: log remote IP
@@ -274,7 +274,7 @@ impl Peer {
                             .fold(true, |i, b| {
                                 if i {
                                     b.pow
-                                        .is_empty()
+                                        .is_none()
                                 } else {
                                     false
                                 }

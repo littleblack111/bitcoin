@@ -17,7 +17,7 @@ pub trait CryptoDigest {
 pub struct Block {
     pub prev_hash: Vec<u8>,
     pub trans: Transaction,
-    pub pow: Vec<u8>,
+    pub pow: Option<u64>,
 }
 
 impl Block {
@@ -27,7 +27,7 @@ impl Block {
                 .unwrap_or(&[])
                 .to_vec(), // special blocks
             trans,
-            pow: Vec::default(),
+            pow: None,
         }
     }
 
@@ -45,14 +45,14 @@ impl Block {
             })
     }
 
-    fn calc_pow(&self) -> Vec<u8> {
+    fn calc_pow(&self) -> u64 {
         for i in 0.. {
             // reset every loop
             let mut hasher = Sha256::new();
             Digest::update(&mut hasher, bincode::encode_to_vec((&self.prev_hash, &self.trans, i), bincode::config::standard()).unwrap());
             let hashed = hasher.finalize();
             if Self::pref_zeros(&hashed).is_ok() {
-                return hashed.to_vec();
+                return i;
             }
         }
         unreachable!()
@@ -65,7 +65,7 @@ impl Block {
     }
 
     pub fn calc_set_pow(&mut self) {
-        self.pow = self.calc_pow();
+        self.pow = Some(self.calc_pow());
     }
 }
 
