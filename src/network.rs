@@ -1,3 +1,5 @@
+use std::fmt::{Debug, Display, Pointer};
+use std::net::SocketAddr;
 use std::sync::{Arc, Weak};
 
 use serde::{Deserialize, Serialize};
@@ -36,7 +38,7 @@ pub struct Network {
     me: Client,
 
     listener: Arc<TcpListener>,
-    peers: Vec<Arc<Mutex<Peer>>>,
+    pub peers: Vec<Arc<Mutex<Peer>>>,
     blockchain: Arc<Mutex<BlockChain>>,
 
     config: NetworkConfig,
@@ -192,13 +194,34 @@ impl Network {
     }
 }
 
-struct Peer {
+pub struct Peer {
     parent: Weak<Mutex<Network>>,
     sink: Arc<Mutex<SplitSink<Framed<TokioFramed<TcpStream, LengthDelimitedCodec>, Request, Request, Json<Request, Request>>, Request>>>,
+    addr: SocketAddr,
+}
+
+impl Display for Peer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "Peer Ip: {}",
+            self.addr
+                .ip()
+        )
+    }
+}
+
+impl Debug for Peer {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        Display::fmt(&self, f)
+    }
 }
 
 impl Peer {
     fn new(parent: Weak<Mutex<Network>>, stream: TcpStream) -> Self {
+        let addr = stream
+            .peer_addr()
+            .unwrap();
         let framed = Framed::new(TokioFramed::new(stream, LengthDelimitedCodec::new()), Json::default());
         let (sink, stream) = framed.split();
         let sink = Arc::new(Mutex::new(sink));
@@ -209,6 +232,7 @@ impl Peer {
         Self {
             parent,
             sink,
+            addr,
         }
     }
 

@@ -74,6 +74,18 @@ impl Ui {
                 )
                 .await;
             }
+
+            if cmd[1] == "list" {
+                println!(
+                    "{:#?}",
+                    self.network
+                        .upgrade()
+                        .unwrap()
+                        .lock()
+                        .await
+                        .peers
+                );
+            }
         }
 
         if cmd[0] == "fetch" {
