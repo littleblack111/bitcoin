@@ -316,6 +316,9 @@ impl Peer {
                             .await;
                         guard.clone()
                     };
+                    if bc.is_empty() {
+                        return;
+                    }
                     Network::broadcast(network, Request::Ibd(Some(bc))).await;
                 }
             },
