@@ -261,6 +261,7 @@ impl Peer {
                         .await
                         .store(block)
                 } else {
+                    println!("Mining new block for transaction: {:#?}", block.trans);
                     block.calc_set_pow();
                     let network = parent
                         .upgrade()
@@ -336,6 +337,7 @@ impl Peer {
                     if bc.is_empty() {
                         return;
                     }
+                    println!("Broadcasting as requested"); // TODO: log requester
                     Network::broadcast(network, Request::Ibd(Some(bc))).await;
                 }
             },
