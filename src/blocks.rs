@@ -1,14 +1,17 @@
 use bincode::Encode;
 use sha2::{Digest, Sha256, digest::DynDigest};
-use std::{
-    fmt::Display,
-    hash::{Hash, Hasher},
-    ops::Deref,
-};
+use std::ops::Deref;
 
 use serde::{Deserialize, Serialize};
 
 use crate::{ZERO_PREFIX_AMOUNT, transaction::Transaction};
+
+use std::sync::{
+    Arc,
+    atomic::{AtomicBool, Ordering},
+};
+use tokio::sync::mpsc;
+use tokio::task;
 
 pub trait CryptoDigest {
     fn digest(&self, state: &mut impl DynDigest);
@@ -46,18 +49,57 @@ impl Block {
             })
     }
 
-    fn calc_pow(&self) -> u64 {
-        for i in 0.. {
-            // reset every loop
-            println!("{i}");
-            let mut hasher = Sha256::new();
-            Digest::update(&mut hasher, bincode::encode_to_vec((&self.prev_hash, &self.trans, i), bincode::config::standard()).unwrap());
-            let hashed = hasher.finalize();
-            if Self::pref_zeros(&hashed).is_ok() {
-                return i;
-            }
+    pub async fn calc_pow(&self) -> u64 {
+        let threads = std::thread::available_parallelism()
+            .map(|n| n.get())
+            .unwrap_or(4);
+        let found = Arc::new(AtomicBool::new(false));
+        let (tx, mut rx) = mpsc::unbounded_channel::<u64>();
+        let prev_hash = Arc::new(
+            self.prev_hash
+                .clone(),
+        );
+        let trans = self.trans;
+        let mut handles = Vec::with_capacity(threads);
+        for t in 0..threads {
+            let found = Arc::clone(&found);
+            let tx = tx.clone();
+            let prev_hash = Arc::clone(&prev_hash);
+            let step = threads as u64;
+            let start = t as u64;
+            handles.push(task::spawn_blocking(move || {
+                let mut i = start;
+                while !found.load(Ordering::Relaxed) {
+                    let mut hasher = Sha256::new();
+                    Digest::update(&mut hasher, bincode::encode_to_vec((&*prev_hash, &trans, i), bincode::config::standard()).unwrap());
+                    let hashed = hasher.finalize();
+                    if Block::pref_zeros(&hashed).is_ok() {
+                        if !found.swap(true, Ordering::Relaxed) {
+                            let _ = tx.send(i);
+                        }
+                        break;
+                    }
+                    println!("{i}");
+                    i = i.wrapping_add(step);
+                }
+            }));
         }
-        unreachable!()
+        drop(tx);
+        let nonce = rx
+            .recv()
+            .await
+            .expect("miner dropped without sending");
+        for h in handles {
+            let _ = h.await;
+        }
+        nonce
+    }
+
+    pub async fn calc_set_pow(&mut self) {
+        self.pow = Some(
+            self.calc_pow()
+                .await,
+        );
     }
 
     pub fn verify_pow(&self) -> bool {
@@ -68,10 +110,6 @@ impl Block {
         } else {
             false
         }
-    }
-
-    pub fn calc_set_pow(&mut self) {
-        self.pow = Some(self.calc_pow());
     }
 }
 
@@ -109,7 +147,7 @@ impl BlockChain {
 
     pub fn store(&mut self, block: Block) {
         // TODO: check config
-        if (block.verify_pow()) {
+        if block.verify_pow() {
             self.blocks
                 .push(block)
         } else {

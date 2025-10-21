@@ -169,14 +169,14 @@ impl Network {
                 .clone()
         };
         for p in peers {
-            p.lock()
+            _ = p
+                .lock()
                 .await
                 .sink
                 .lock()
                 .await
                 .send(data.clone())
-                .await
-                .unwrap();
+                .await;
         }
     }
 
@@ -262,7 +262,9 @@ impl Peer {
                         .store(block)
                 } else {
                     println!("Mining new block for transaction: {:#?}", block.trans);
-                    block.calc_set_pow();
+                    block
+                        .calc_set_pow()
+                        .await;
                     let network = parent
                         .upgrade()
                         .unwrap();
