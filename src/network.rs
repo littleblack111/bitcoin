@@ -229,7 +229,7 @@ impl Peer {
                         eprintln!("Rejecting remote block, POW verification failed");
                         return;
                     }
-                    println!("Accepting and storing remote block: {:?}", block);
+                    println!("Accepting and storing remote block: {:#?}", block);
                     let network = parent
                         .upgrade()
                         .unwrap();
@@ -293,10 +293,10 @@ impl Peer {
                                 }
                             }))
                     {
-                        println!("Setting IBD to {:?} from remote", bc);
+                        println!("Setting IBD to {:#?} from remote", bc);
                         *self_bc = bc;
                     } else if *self_bc != bc {
-                        eprintln!("Remote IBD broadcast did not match ours, {:?} vs. {:?}", bc, self_bc);
+                        eprintln!("Remote IBD broadcast did not match ours, {:#?} vs. {:#?}", bc, self_bc);
                     }
                 }
                 None => {

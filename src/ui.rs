@@ -43,7 +43,7 @@ impl Ui {
 
         if cmd[0] == "bc" {
             println!(
-                "{:?}",
+                "{:#?}",
                 self.blockchain
                     .lock()
                     .await
