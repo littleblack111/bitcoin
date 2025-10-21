@@ -160,19 +160,26 @@ impl Network {
                 .clone()
         };
         for p in peers {
-            let sink = {
-                let peer = p
-                    .lock()
-                    .await;
-                Arc::clone(&peer.sink)
-            };
-            let mut sink = sink
+            p.lock()
+                .await
+                .sink
                 .lock()
-                .await;
-            let _ = sink
+                .await
                 .send(data.clone())
-                .await;
+                .await
+                .unwrap();
         }
+    }
+
+    async fn write(peer: &mut Peer, data: Request) -> Result<(), std::io::Error> {
+        let sink = peer
+            .sink
+            .clone();
+        let mut sink = sink
+            .lock()
+            .await;
+        sink.send(data.clone())
+            .await
     }
 }
 

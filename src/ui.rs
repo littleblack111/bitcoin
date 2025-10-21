@@ -76,6 +76,15 @@ impl Ui {
             }
         }
 
+        if cmd[0] == "fetch" {
+            self.network
+                .upgrade()
+                .unwrap()
+                .lock()
+                .await
+                .get_idb();
+        }
+
         None
     }
 }
