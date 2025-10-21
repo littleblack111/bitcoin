@@ -1,4 +1,4 @@
-use std::{sync::Arc, thread::sleep, time::Duration};
+use std::{sync::Arc, time::Duration};
 
 use bitcoin::{blocks::BlockChain, network::Network};
 use tokio::sync::Mutex;
@@ -10,7 +10,11 @@ async fn main() {
     network
         .lock()
         .await
+        .start();
+    network
+        .lock()
+        .await
         .broadcast(bitcoin::network::Request::Ibd(None))
         .await;
-    sleep(Duration::from_secs(100));
+    tokio::time::sleep(Duration::from_secs(100)).await;
 }

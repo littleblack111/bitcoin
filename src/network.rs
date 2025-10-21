@@ -1,7 +1,4 @@
-use std::{
-    net::SocketAddr,
-    sync::{Arc, Weak},
-};
+use std::sync::{Arc, Weak};
 
 use serde::{Deserialize, Serialize};
 
@@ -29,19 +26,20 @@ pub enum Request {
 pub struct Network {
     this: Weak<Mutex<Self>>,
     me: Client,
-    listener: TcpListener,
+    listener: Arc<TcpListener>,
     peers: Vec<Arc<Mutex<Peer>>>,
     blockchain: Arc<Mutex<BlockChain>>,
 }
 
 impl Network {
     pub async fn new(blockchain: Arc<Mutex<BlockChain>>) -> Arc<Mutex<Self>> {
+        let listener = TcpListener::bind("0.0.0.0:6767")
+            .await
+            .unwrap();
         let this = Arc::new(Mutex::new(Self {
             me: Client::default(),
             this: Weak::new(),
-            listener: TcpListener::bind("0.0.0.0:6767")
-                .await
-                .unwrap(),
+            listener: Arc::new(listener),
             peers: Vec::default(),
             blockchain,
         }));
@@ -52,17 +50,59 @@ impl Network {
     }
 
     async fn try_peer(&mut self) {
+        let peer = Arc::new(Mutex::new(Peer::new(
+            self.this
+                .clone(),
+            TcpStream::connect("192.168.143.90:6767")
+                .await
+                .unwrap(),
+        )));
         self.peers
-            .push(Arc::new(Mutex::new(Peer::new(
-                self.this
-                    .clone(),
-                TcpStream::connect("192.168.1.100")
-                    .await
-                    .unwrap(),
-            ))))
+            .push(peer.clone());
+
+        spawn(async move {
+            peer.lock()
+                .await
+                .start()
+                .await;
+        });
     }
 
-    async fn start(&self) {
+    pub fn start(&self) {
+        let this = self
+            .this
+            .clone();
+        let listener = self
+            .listener
+            .clone();
+        spawn(async move {
+            loop {
+                let (stream, _addr) = listener
+                    .accept()
+                    .await
+                    .unwrap();
+
+                let peer = Arc::new(Mutex::new(Peer::new(this.clone(), stream)));
+
+                if let Some(parent) = this.upgrade() {
+                    let mut net = parent
+                        .lock()
+                        .await;
+                    net.peers
+                        .push(Arc::clone(&peer));
+                }
+
+                spawn({
+                    let peer = Arc::clone(&peer);
+                    async move {
+                        peer.lock()
+                            .await
+                            .start()
+                            .await;
+                    }
+                });
+            }
+        });
         let this = self
             .this
             .clone();
@@ -71,36 +111,10 @@ impl Network {
                 let mut net = parent
                     .lock()
                     .await;
-                net.listen()
+                net.try_peer()
                     .await;
             }
         });
-    }
-
-    async fn listen(&mut self) -> ! {
-        loop {
-            let (stream, addr) = self
-                .listener
-                .accept()
-                .await
-                .unwrap();
-
-            let peer = Arc::new(Mutex::new(Peer::new(
-                self.this
-                    .clone(),
-                stream,
-            )));
-
-            self.peers
-                .push(Arc::clone(&peer));
-
-            spawn(async move {
-                peer.lock()
-                    .await
-                    .start()
-                    .await;
-            });
-        }
     }
 
     pub async fn broadcast(&mut self, data: Request) {
@@ -122,6 +136,7 @@ struct Peer {
 
 impl Peer {
     fn new(parent: Weak<Mutex<Network>>, stream: TcpStream) -> Self {
+        eprintln!("a");
         Self {
             parent,
             framed: Framed::new(TokioFramed::new(stream, LengthDelimitedCodec::new()), Json::default()),
@@ -135,6 +150,7 @@ impl Peer {
                 .next()
                 .await
             {
+                eprintln!("a");
                 self.handle(req.unwrap())
                     .await;
             }
