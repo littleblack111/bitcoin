@@ -24,18 +24,14 @@ async fn main() {
 
     Network::broadcast(network.clone(), Request::Ibd(None)).await;
 
-    let (blockchain, me) = {
+    let me = {
         let net = network
             .lock()
             .await;
-        (
-            net.get_blockchain()
-                .clone(),
-            *net.get_me(),
-        )
+        *net.get_me()
     };
 
-    let mut ui = Ui::new(blockchain, me);
+    let mut ui = Ui::new(Arc::downgrade(&network), me);
 
     loop {
         let mut cmd = String::new();

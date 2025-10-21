@@ -1,17 +1,22 @@
-use std::sync::Arc;
+use std::sync::{Arc, Weak};
 
-use bitcoin::{blocks::BlockChain, client::Client, network::Request, transaction::Transaction};
+use bitcoin::{
+    blocks::BlockChain,
+    client::Client,
+    network::{Network, Request},
+    transaction::Transaction,
+};
 use tokio::sync::Mutex;
 
 pub struct Ui {
-    blockchain: Arc<Mutex<BlockChain>>,
+    network: Weak<Mutex<Network>>,
     me: Client,
 }
 
 impl Ui {
-    pub fn new(blockchain: Arc<Mutex<BlockChain>>, me: Client) -> Self {
+    pub fn new(network: Weak<Mutex<Network>>, me: Client) -> Self {
         Self {
-            blockchain,
+            network,
             me,
         }
     }
@@ -34,7 +39,12 @@ impl Ui {
                     .unwrap(),
             );
             return Some(Request::Block(
-                self.blockchain
+                self.network
+                    .upgrade()
+                    .unwrap()
+                    .lock()
+                    .await
+                    .get_blockchain()
                     .lock()
                     .await
                     .new_block(trans),
@@ -44,11 +54,28 @@ impl Ui {
         if cmd[0] == "bc" {
             println!(
                 "{:#?}",
-                self.blockchain
+                self.network
+                    .upgrade()
+                    .unwrap()
+                    .lock()
+                    .await
+                    .get_blockchain()
                     .lock()
                     .await
             );
         }
+
+        if cmd[0] == "peer" {
+            if cmd[1] == "add" {
+                Network::try_peer(
+                    self.network
+                        .clone(),
+                    cmd[2],
+                )
+                .await;
+            }
+        }
+
         None
     }
 }

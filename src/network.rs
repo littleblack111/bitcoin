@@ -4,6 +4,7 @@ use serde::{Deserialize, Serialize};
 
 use futures::stream::{SplitSink, SplitStream};
 use futures::{SinkExt, StreamExt};
+use tokio::net::ToSocketAddrs;
 use tokio::{
     net::{TcpListener, TcpStream},
     spawn,
@@ -72,8 +73,8 @@ impl Network {
         this
     }
 
-    async fn try_peer(this: Weak<Mutex<Self>>) {
-        let stream = TcpStream::connect("192.168.1.16:6767")
+    pub async fn try_peer(this: Weak<Mutex<Self>>, ip: impl ToSocketAddrs) {
+        let stream = TcpStream::connect(ip)
             .await
             .unwrap();
         let peer = Arc::new(Mutex::new(Peer::new(this.clone(), stream)));
@@ -132,7 +133,7 @@ impl Network {
             .this
             .clone();
         spawn(async move {
-            Network::try_peer(this).await;
+            Network::try_peer(this, "192.168.1.16:6767").await;
         });
 
         self.get_idb()
