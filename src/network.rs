@@ -2,6 +2,7 @@ use std::sync::{Arc, Weak};
 
 use serde::{Deserialize, Serialize};
 
+use futures::stream::{SplitSink, SplitStream};
 use futures::{SinkExt, StreamExt};
 use tokio::{
     net::{TcpListener, TcpStream},
@@ -140,51 +141,66 @@ impl Network {
 
     pub async fn broadcast(&mut self, data: Request) {
         for p in &self.peers {
-            p.lock()
-                .await
-                .framed
+            let sink = {
+                let peer = p
+                    .lock()
+                    .await;
+                Arc::clone(&peer.sink)
+            };
+            let mut sink = sink
+                .lock()
+                .await;
+            let _ = sink
                 .send(data.clone())
-                .await
-                .unwrap();
+                .await;
         }
     }
 }
 
 struct Peer {
     parent: Weak<Mutex<Network>>,
-    framed: Framed<TokioFramed<TcpStream, LengthDelimitedCodec>, Request, Request, Json<Request, Request>>,
+    sink: Arc<Mutex<SplitSink<Framed<TokioFramed<TcpStream, LengthDelimitedCodec>, Request, Request, Json<Request, Request>>, Request>>>,
 }
 
 impl Peer {
     fn new(parent: Weak<Mutex<Network>>, stream: TcpStream) -> Self {
+        let framed = Framed::new(TokioFramed::new(stream, LengthDelimitedCodec::new()), Json::default());
+        let (sink, stream) = framed.split();
+        let sink = Arc::new(Mutex::new(sink));
+        let reader = parent.clone();
+        spawn(async move {
+            Peer::read_loop(reader, stream).await;
+        });
         Self {
             parent,
-            framed: Framed::new(TokioFramed::new(stream, LengthDelimitedCodec::new()), Json::default()),
+            sink,
         }
     }
 
-    async fn start(&mut self) {
+    async fn start(&mut self) {}
+
+    async fn read_loop(parent: Weak<Mutex<Network>>, mut stream: SplitStream<Framed<TokioFramed<TcpStream, LengthDelimitedCodec>, Request, Request, Json<Request, Request>>>) {
         loop {
-            while let Some(req) = self
-                .framed
+            while let Some(req) = stream
                 .next()
                 .await
             {
-                self.handle(req.unwrap())
-                    .await;
+                if let Ok(msg) = req {
+                    Peer::handle(parent.clone(), msg).await;
+                }
             }
         }
     }
 
-    async fn handle(&mut self, req: Request) {
+    async fn handle(parent: Weak<Mutex<Network>>, req: Request) {
         match req {
             Request::Block(mut block) => match block.pow {
-                Some(pow) => {
+                Some(_pow) => {
                     if !block.verify_pow() {
                         eprintln!("Rejecting remote block, POW verification failed"); // TODO: log remote IP
                         return;
                     }
-                    self.parent
+                    parent
                         .upgrade()
                         .unwrap()
                         .lock()
@@ -196,8 +212,7 @@ impl Peer {
                 }
                 None => {
                     block.calc_set_pow();
-                    let parent = self
-                        .parent
+                    let parent = parent
                         .upgrade()
                         .unwrap();
                     let mut parent = parent
@@ -210,27 +225,25 @@ impl Peer {
             },
             Request::Ibd(bc) => match bc {
                 Some(bc) => {
-                    let parent = self
-                        .parent
+                    let parent = parent
                         .upgrade()
                         .unwrap();
                     let parent = parent
                         .lock()
                         .await;
-                    let mut self_bc = parent
+                    if *parent
                         .blockchain
                         .lock()
-                        .await;
-                    // verify if our blocks match theirs
-                    if *self_bc != bc {
-                        eprintln!("Remote IBD broadcast did not match ours") // TODO: log IP of sender
-                        // TODO: verify POWs, prev_hash of theirs(check missing), verify our POWs and if they have more blocks if their's all correct
-                        // TODO: maybe queue and see if everybody else's blockchain match and is verified and has more block
+                        .await
+                        != bc
+                    {
+                        // TODO: maybe queue and see if everybody else's blockchain match and is
+                        // verified and has more block
+                        eprintln!("Remote IBD broadcast did not match ours")
                     }
                 }
                 None => {
-                    let parent = self
-                        .parent
+                    let parent = parent
                         .upgrade()
                         .unwrap();
                     let mut parent = parent
