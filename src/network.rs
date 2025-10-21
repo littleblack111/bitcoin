@@ -85,11 +85,20 @@ impl Network {
                 .peers
                 .push(Arc::clone(&peer));
         }
+        let peer2 = Arc::clone(&peer);
         spawn(async move {
-            peer.lock()
+            peer2
+                .lock()
                 .await
                 .start()
                 .await;
+        });
+        let peer2 = Arc::clone(&peer);
+        spawn(async move {
+            let mut guard = peer2
+                .lock()
+                .await;
+            let _ = Network::write(&mut guard, Request::Ibd(None)).await;
         });
     }
 
