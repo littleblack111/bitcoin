@@ -50,7 +50,7 @@ impl Block {
         for i in 0.. {
             // reset every loop
             let mut hasher = Sha256::new();
-            self.digest(&mut hasher);
+            Digest::update(&mut hasher, bincode::encode_to_vec((&self.prev_hash, &self.trans, i), bincode::config::standard()).unwrap());
             let hashed = hasher.finalize();
             if Self::pref_zeros(&hashed).is_ok() {
                 return i;
