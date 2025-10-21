@@ -75,7 +75,7 @@ impl Network {
         let peer = Arc::new(Mutex::new(Peer::new(
             self.this
                 .clone(),
-            TcpStream::connect("192.168.143.90:6767")
+            TcpStream::connect("192.168.1.16:6767")
                 .await
                 .unwrap(),
         )));
@@ -222,8 +222,11 @@ impl Peer {
 
     async fn handle(parent: Weak<Mutex<Network>>, req: Request) {
         match req {
-            Request::Block(mut block) => match block.pow {
-                Some(_pow) => {
+            Request::Block(mut block) => {
+                if !block
+                    .pow
+                    .is_empty()
+                {
                     if !block.verify_pow() {
                         eprintln!("Rejecting remote block, POW verification failed"); // TODO: log remote IP
                         return;
@@ -237,8 +240,8 @@ impl Peer {
                         .lock()
                         .await
                         .store(block)
-                }
-                None => {
+                } else {
+                    print!("as");
                     block.calc_set_pow();
                     let parent = parent
                         .upgrade()
@@ -250,7 +253,7 @@ impl Peer {
                         .broadcast(Request::Block(block))
                         .await;
                 }
-            },
+            }
             Request::Ibd(bc) => match bc {
                 Some(bc) => {
                     let parent = parent
@@ -267,10 +270,11 @@ impl Peer {
                         || (self_bc
                             .blocks
                             .iter()
+                            // TODO: Optimize via try_fold
                             .fold(true, |i, b| {
                                 if i {
                                     b.pow
-                                        .is_none()
+                                        .is_empty()
                                 } else {
                                     false
                                 }

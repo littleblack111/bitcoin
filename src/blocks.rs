@@ -1,5 +1,7 @@
+use bincode::Encode;
+use sha2::{Digest, Sha256, digest::DynDigest};
 use std::{
-    hash::{DefaultHasher, Hash, Hasher},
+    hash::{Hash, Hasher},
     ops::Deref,
 };
 
@@ -7,68 +9,69 @@ use serde::{Deserialize, Serialize};
 
 use crate::{ZERO_PREFIX_AMOUNT, transaction::Transaction};
 
-#[derive(Deserialize, Serialize, Clone, Copy, PartialEq)]
+pub trait CryptoDigest {
+    fn digest(&self, state: &mut impl DynDigest);
+}
+
+#[derive(Deserialize, Serialize, Clone, PartialEq, Encode)]
 pub struct Block {
-    pub prev_hash: u64,
+    pub prev_hash: Vec<u8>,
     pub trans: Transaction,
-    pub pow: Option<u64>,
+    pub pow: Vec<u8>,
 }
 
 impl Block {
-    fn new(prev_hash: Option<u64>, trans: Transaction) -> Self {
+    fn new(prev_hash: Option<&[u8]>, trans: Transaction) -> Self {
         Self {
-            prev_hash: prev_hash.unwrap_or(0), // special blocks
+            prev_hash: prev_hash
+                .unwrap_or(&[])
+                .to_vec(), // special blocks
             trans,
-            pow: None,
+            pow: Vec::default(),
         }
     }
 
-    fn calc_pow(&self) -> u64 {
+    fn pref_zeros(hashed: &[u8]) -> Result<usize, usize> {
+        hashed
+            .iter()
+            .try_fold(0, |nonce, x| {
+                if nonce >= ZERO_PREFIX_AMOUNT {
+                    Ok(nonce)
+                } else if *x == 0 {
+                    Ok(nonce + 1)
+                } else {
+                    Err(nonce)
+                }
+            })
+    }
+
+    fn calc_pow(&self) -> Vec<u8> {
         for i in 0.. {
             // reset every loop
-            let mut hasher = DefaultHasher::new();
-            (&self.prev_hash, &self.trans, i).hash(&mut hasher);
-            let hashed = hasher.finish();
-            if hashed
-                .to_string()
-                .starts_with(
-                    &"0".repeat(ZERO_PREFIX_AMOUNT)
-                        .to_string(),
-                )
-            {
-                return hashed;
+            let mut hasher = Sha256::new();
+            Digest::update(&mut hasher, bincode::encode_to_vec((&self.prev_hash, &self.trans, i), bincode::config::standard()).unwrap());
+            let hashed = hasher.finalize();
+            if Self::pref_zeros(&hashed).is_ok() {
+                return hashed.to_vec();
             }
         }
         unreachable!()
     }
 
     pub fn verify_pow(&mut self) -> bool {
-        let mut hasher = DefaultHasher::new();
-        self.hash(&mut hasher);
-        hasher
-            .finish()
-            .to_string()
-            .to_string()
-            .starts_with(
-                &"0".repeat(ZERO_PREFIX_AMOUNT)
-                    .to_string(),
-            )
+        let mut hasher = Sha256::new();
+        Digest::update(&mut hasher, bincode::encode_to_vec(&*self, bincode::config::standard()).unwrap());
+        Self::pref_zeros(&hasher.finalize()).is_ok()
     }
 
     pub fn calc_set_pow(&mut self) {
-        self.pow = Some(self.calc_pow());
+        self.pow = self.calc_pow();
     }
 }
 
-impl Hash for Block {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        self.prev_hash
-            .hash(state);
-        self.trans
-            .hash(state);
-        self.pow
-            .expect("Cannot hash whole block with no PoW")
-            .hash(state);
+impl CryptoDigest for Block {
+    fn digest(&self, state: &mut impl DynDigest) {
+        state.update(&bincode::encode_to_vec((&self.prev_hash, &self.trans, &self.pow), bincode::config::standard()).unwrap());
     }
 }
 
@@ -85,16 +88,17 @@ impl BlockChain {
     }
 
     pub fn new_block(&self, trans: Transaction) -> Block {
-        let mut hasher = DefaultHasher::new();
-        Block::new(
-            self.blocks
-                .last()
-                .map(|b| {
-                    b.hash(&mut hasher);
-                    hasher.finish()
-                }),
-            trans,
-        )
+        let mut hasher = Sha256::new();
+        let prev = self
+            .blocks
+            .last();
+        let prev_hash = if let Some(b) = prev {
+            b.digest(&mut hasher);
+            Some(&*hasher.finalize())
+        } else {
+            None
+        };
+        Block::new(prev_hash, trans)
     }
 
     pub fn store(&mut self, block: Block) {
@@ -106,6 +110,7 @@ impl BlockChain {
 
 impl Deref for BlockChain {
     type Target = Vec<Block>;
+
     fn deref(&self) -> &Self::Target {
         &self.blocks
     }

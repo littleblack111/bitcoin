@@ -6,4 +6,4 @@ pub mod client;
 
 pub mod network;
 
-const ZERO_PREFIX_AMOUNT: usize = 5; // TODO: make this dynamic
+const ZERO_PREFIX_AMOUNT: usize = 2; // TODO: make this dynamic
