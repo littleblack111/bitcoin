@@ -1,7 +1,6 @@
-use std::sync::{Arc, Weak};
+use std::sync::Weak;
 
 use bitcoin::{
-    blocks::BlockChain,
     client::Client,
     network::{Network, Request},
     transaction::Transaction,
@@ -38,50 +37,49 @@ impl Ui {
                     .parse()
                     .unwrap(),
             );
-            return Some(Request::Block(
-                self.network
-                    .upgrade()
-                    .unwrap()
-                    .lock()
-                    .await
-                    .get_blockchain()
-                    .lock()
-                    .await
-                    .new_block(trans),
-            ));
+            let net = self
+                .network
+                .upgrade()
+                .unwrap();
+            let block = Network::new_block(net, trans).await;
+            return Some(Request::Block(block));
         }
 
         if cmd[0] == "bc" {
-            println!(
-                "{:#?}",
-                self.network
-                    .upgrade()
-                    .unwrap()
-                    .lock()
+            let net = self
+                .network
+                .upgrade()
+                .unwrap();
+            let bc = {
+                net.lock()
                     .await
                     .get_blockchain()
-                    .lock()
+                    .clone()
+            };
+            println!(
+                "{:#?}",
+                bc.lock()
                     .await
             );
         }
 
         if cmd[0] == "peer" {
             if cmd[1] == "add" {
-                Network::try_peer(
-                    self.network
-                        .clone(),
-                    cmd[2],
-                )
-                .await;
+                let net = self
+                    .network
+                    .upgrade()
+                    .unwrap();
+                Network::try_peer(net, cmd[2]).await;
             }
 
             if cmd[1] == "list" {
+                let net = self
+                    .network
+                    .upgrade()
+                    .unwrap();
                 println!(
                     "{:#?}",
-                    self.network
-                        .upgrade()
-                        .unwrap()
-                        .lock()
+                    net.lock()
                         .await
                         .peers
                 );
@@ -89,12 +87,11 @@ impl Ui {
         }
 
         if cmd[0] == "fetch" {
-            self.network
+            let net = self
+                .network
                 .upgrade()
-                .unwrap()
-                .lock()
-                .await
-                .get_idb();
+                .unwrap();
+            Network::get_idb(net);
         }
 
         None

@@ -1,4 +1,4 @@
-use std::fmt::{Debug, Display, Pointer};
+use std::fmt::{Debug, Display};
 use std::net::SocketAddr;
 use std::sync::{Arc, Weak};
 
@@ -19,6 +19,7 @@ use tokio_util::codec::LengthDelimitedCodec;
 use crate::{
     blocks::{Block, BlockChain},
     client::Client,
+    transaction::Transaction,
 };
 
 #[derive(Deserialize, Serialize, Clone)]
@@ -34,13 +35,10 @@ pub struct NetworkConfig {
 }
 
 pub struct Network {
-    this: Weak<Mutex<Self>>,
     me: Client,
-
     listener: Arc<TcpListener>,
     pub peers: Vec<Arc<Mutex<Peer>>>,
     blockchain: Arc<Mutex<BlockChain>>,
-
     config: NetworkConfig,
 }
 
@@ -48,11 +46,9 @@ impl Network {
     pub fn get_config(&mut self) -> &mut NetworkConfig {
         &mut self.config
     }
-
     pub fn get_me(&self) -> &Client {
         &self.me
     }
-
     pub fn get_blockchain(&self) -> &Arc<Mutex<BlockChain>> {
         &self.blockchain
     }
@@ -61,28 +57,23 @@ impl Network {
         let listener = TcpListener::bind("0.0.0.0:6767")
             .await
             .unwrap();
-        let this = Arc::new(Mutex::new(Self {
+        Arc::new(Mutex::new(Self {
             me: Client::default(),
-            this: Weak::new(),
             listener: Arc::new(listener),
             peers: Vec::default(),
             blockchain,
             config: NetworkConfig::default(),
-        }));
-        this.lock()
-            .await
-            .this = Arc::downgrade(&this);
-        this
+        }))
     }
 
-    pub async fn try_peer(this: Weak<Mutex<Self>>, ip: impl ToSocketAddrs) {
+    pub async fn try_peer(this: Arc<Mutex<Self>>, ip: impl ToSocketAddrs) {
         let stream = TcpStream::connect(ip)
             .await
             .unwrap();
-        let peer = Arc::new(Mutex::new(Peer::new(this.clone(), stream)));
-        if let Some(parent) = this.upgrade() {
-            parent
-                .lock()
+        let weak = Arc::downgrade(&this);
+        let peer = Arc::new(Mutex::new(Peer::new(weak, stream)));
+        {
+            this.lock()
                 .await
                 .peers
                 .push(Arc::clone(&peer));
@@ -104,31 +95,30 @@ impl Network {
         });
     }
 
-    pub fn start(&self) {
-        let this = self
-            .this
-            .clone();
-        let listener = self
-            .listener
-            .clone();
+    pub fn start(this: Arc<Mutex<Self>>) {
+        let this_accept = this.clone();
         spawn(async move {
+            let listener = {
+                this_accept
+                    .lock()
+                    .await
+                    .listener
+                    .clone()
+            };
             loop {
                 let (stream, _addr) = listener
                     .accept()
                     .await
                     .unwrap();
-
-                let peer = Arc::new(Mutex::new(Peer::new(this.clone(), stream)));
-
-                if let Some(parent) = this.upgrade() {
-                    let mut parent = parent
+                let peer = Arc::new(Mutex::new(Peer::new(Arc::downgrade(&this_accept), stream)));
+                {
+                    let mut parent = this_accept
                         .lock()
                         .await;
                     parent
                         .peers
                         .push(Arc::clone(&peer));
                 }
-
                 spawn({
                     let peer = Arc::clone(&peer);
                     async move {
@@ -140,33 +130,35 @@ impl Network {
                 });
             }
         });
-        let this = self
-            .this
-            .clone();
+        let this_connect = this.clone();
         spawn(async move {
-            Network::try_peer(this, "192.168.1.16:6767").await;
+            Network::try_peer(this_connect, "192.168.1.16:6767").await;
         });
-
-        self.get_idb()
+        Network::get_idb(this);
     }
 
-    pub fn get_idb(&self) {
-        let this = self
-            .this
-            .clone();
+    pub fn get_idb(this: Arc<Mutex<Self>>) {
         spawn(async move {
-            if let Some(parent) = this.upgrade() {
-                Network::broadcast(parent, Request::Ibd(None)).await;
-            }
+            Network::broadcast(this, Request::Ibd(None)).await;
         });
+    }
+
+    pub async fn new_block(this: Arc<Mutex<Self>>, trans: Transaction) -> Block {
+        let bc = {
+            this.lock()
+                .await
+                .blockchain
+                .clone()
+        };
+        bc.lock()
+            .await
+            .new_block(trans)
     }
 
     pub async fn broadcast(this: Arc<Mutex<Self>>, data: Request) {
         let peers: Vec<Arc<Mutex<Peer>>> = {
-            let guard = this
-                .lock()
-                .await;
-            guard
+            this.lock()
+                .await
                 .peers
                 .clone()
         };
@@ -183,10 +175,8 @@ impl Network {
     }
 
     async fn write(peer: &mut Peer, data: Request) -> Result<(), std::io::Error> {
-        let sink = peer
+        let mut sink = peer
             .sink
-            .clone();
-        let mut sink = sink
             .lock()
             .await;
         sink.send(data.clone())
@@ -195,7 +185,6 @@ impl Network {
 }
 
 pub struct Peer {
-    parent: Weak<Mutex<Network>>,
     sink: Arc<Mutex<SplitSink<Framed<TokioFramed<TcpStream, LengthDelimitedCodec>, Request, Request, Json<Request, Request>>, Request>>>,
     addr: SocketAddr,
 }
@@ -225,12 +214,10 @@ impl Peer {
         let framed = Framed::new(TokioFramed::new(stream, LengthDelimitedCodec::new()), Json::default());
         let (sink, stream) = framed.split();
         let sink = Arc::new(Mutex::new(sink));
-        let reader = parent.clone();
         spawn(async move {
-            Peer::read_loop(reader, stream).await;
+            Peer::read_loop(parent, stream).await;
         });
         Self {
-            parent,
             sink,
             addr,
         }
@@ -253,13 +240,15 @@ impl Peer {
                 .await
             {
                 if let Ok(msg) = req {
-                    Peer::handle(parent.clone(), msg).await;
+                    if let Some(p) = parent.upgrade() {
+                        Peer::handle(p, msg).await;
+                    }
                 }
             }
         }
     }
 
-    async fn handle(parent: Weak<Mutex<Network>>, req: Request) {
+    async fn handle(parent: Arc<Mutex<Network>>, req: Request) {
         match req {
             Request::Block(mut block) => {
                 if block
@@ -271,11 +260,8 @@ impl Peer {
                         return;
                     }
                     println!("Accepting and storing remote block: {:#?}", block);
-                    let network = parent
-                        .upgrade()
-                        .unwrap();
                     let bc = {
-                        network
+                        parent
                             .lock()
                             .await
                             .blockchain
@@ -289,12 +275,9 @@ impl Peer {
                     block
                         .calc_set_pow()
                         .await;
-                    let network = parent
-                        .upgrade()
-                        .unwrap();
                     {
                         let self_bc = {
-                            network
+                            parent
                                 .lock()
                                 .await
                                 .blockchain
@@ -305,16 +288,13 @@ impl Peer {
                             .await
                             .store(block.clone());
                     }
-                    Network::broadcast(network, Request::Block(block)).await;
+                    Network::broadcast(parent, Request::Block(block)).await;
                 }
             }
             Request::Ibd(bc) => match bc {
                 Some(bc) => {
-                    let network = parent
-                        .upgrade()
-                        .unwrap();
                     let self_bc = {
-                        network
+                        parent
                             .lock()
                             .await
                             .blockchain
@@ -344,12 +324,9 @@ impl Peer {
                     }
                 }
                 None => {
-                    let network = parent
-                        .upgrade()
-                        .unwrap();
                     let bc = {
                         let bc = {
-                            network
+                            parent
                                 .lock()
                                 .await
                                 .blockchain
@@ -364,7 +341,7 @@ impl Peer {
                         return;
                     }
                     println!("Broadcasting as requested"); // TODO: log requester
-                    Network::broadcast(network, Request::Ibd(Some(bc))).await;
+                    Network::broadcast(parent, Request::Ibd(Some(bc))).await;
                 }
             },
         }

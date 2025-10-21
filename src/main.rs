@@ -15,12 +15,7 @@ async fn main() {
     let bc = Arc::new(Mutex::new(BlockChain::default()));
     let network = Network::new(bc).await;
 
-    {
-        let net = network
-            .lock()
-            .await;
-        net.start();
-    }
+    Network::start(network.clone());
 
     Network::broadcast(network.clone(), Request::Ibd(None)).await;
 
