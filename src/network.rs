@@ -159,7 +159,7 @@ impl Peer {
         match req {
             Request::Block(mut block) => match block.pow {
                 Some(pow) => {
-                    if !block.verify_pow(pow) {
+                    if !block.verify_pow() {
                         eprintln!("Rejecting remote block, POW verification failed"); // TODO: log remote IP
                         return;
                     }

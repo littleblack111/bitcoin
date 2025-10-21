@@ -42,9 +42,9 @@ impl Block {
         unreachable!()
     }
 
-    pub fn verify_pow(&mut self, pow: u64) -> bool {
+    pub fn verify_pow(&mut self) -> bool {
         let mut hasher = DefaultHasher::new();
-        (&self.prev_hash, &self.trans, pow).hash(&mut hasher);
+        self.hash(&mut hasher);
         hasher
             .finish()
             .to_string()
@@ -66,15 +66,9 @@ impl Hash for Block {
             .hash(state);
         self.trans
             .hash(state);
-        if self
-            .pow
-            .is_none()
-        {
-            Self::calc_pow(self).hash(state);
-        } else {
-            self.pow
-                .hash(state);
-        }
+        self.pow
+            .expect("Cannot hash whole block with no PoW")
+            .hash(state);
     }
 }
 
