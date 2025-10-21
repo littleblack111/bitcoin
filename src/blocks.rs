@@ -90,7 +90,11 @@ impl BlockChain {
         }
     }
 
-    pub fn store(&mut self, block: Block) {}
+    pub fn store(&mut self, block: Block) {
+        // TODO: verify blocks
+        self.blocks
+            .push(block)
+    }
 }
 
 impl Deref for BlockChain {
