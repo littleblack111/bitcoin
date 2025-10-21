@@ -40,6 +40,15 @@ impl Ui {
                     .new_block(trans),
             ));
         }
+
+        if cmd[0] == "bc" {
+            println!(
+                "{:?}",
+                self.blockchain
+                    .lock()
+                    .await
+            );
+        }
         None
     }
 }

@@ -223,14 +223,15 @@ impl Peer {
     async fn handle(parent: Weak<Mutex<Network>>, req: Request) {
         match req {
             Request::Block(mut block) => {
-                if !block
+                if block
                     .pow
-                    .is_none()
+                    .is_some()
                 {
                     if !block.verify_pow() {
                         eprintln!("Rejecting remote block, POW verification failed"); // TODO: log remote IP
                         return;
                     }
+                    println!("Accepting and storing remote block: {:?}", block);
                     parent
                         .upgrade()
                         .unwrap()
@@ -241,7 +242,6 @@ impl Peer {
                         .await
                         .store(block)
                 } else {
-                    print!("as");
                     block.calc_set_pow();
                     let parent = parent
                         .upgrade()

@@ -2,7 +2,7 @@ use bincode::Encode;
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 
-#[derive(Hash, Deserialize, Serialize, Clone, Copy, PartialEq, Encode)]
+#[derive(Debug, Hash, Deserialize, Serialize, Clone, Copy, PartialEq, Encode)]
 pub struct Client {
     id: u32,
 }

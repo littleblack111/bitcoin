@@ -1,6 +1,7 @@
 use bincode::Encode;
 use sha2::{Digest, Sha256, digest::DynDigest};
 use std::{
+    fmt::Display,
     hash::{Hash, Hasher},
     ops::Deref,
 };
@@ -13,7 +14,7 @@ pub trait CryptoDigest {
     fn digest(&self, state: &mut impl DynDigest);
 }
 
-#[derive(Deserialize, Serialize, Clone, PartialEq, Encode)]
+#[derive(Debug, Deserialize, Serialize, Clone, PartialEq, Encode)]
 pub struct Block {
     pub prev_hash: Vec<u8>,
     pub trans: Transaction,
@@ -79,7 +80,7 @@ impl CryptoDigest for Block {
     }
 }
 
-#[derive(Default, Deserialize, Serialize, Clone, PartialEq)]
+#[derive(Debug, Default, Deserialize, Serialize, Clone, PartialEq)]
 pub struct BlockChain {
     pub blocks: Vec<Block>,
 }
@@ -106,9 +107,13 @@ impl BlockChain {
     }
 
     pub fn store(&mut self, block: Block) {
-        // TODO: verify blocks
-        self.blocks
-            .push(block)
+        // TODO: check config
+        if (block.verify_pow()) {
+            self.blocks
+                .push(block)
+        } else {
+            eprint!("Err: Failed to store unverified block")
+        }
     }
 }
 

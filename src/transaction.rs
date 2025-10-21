@@ -3,7 +3,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::client::Client;
 
-#[derive(Hash, Deserialize, Serialize, Clone, Copy, PartialEq, Encode)]
+#[derive(Debug, Hash, Deserialize, Serialize, Clone, Copy, PartialEq, Encode)]
 pub struct Transaction {
     from: Client,
     to: Client,
