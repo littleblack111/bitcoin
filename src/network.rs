@@ -23,15 +23,35 @@ pub enum Request {
     Ibd(Option<BlockChain>),
 }
 
+#[derive(Default)]
+pub struct NetworkConfig {
+    auto_mine: bool,
+}
+
 pub struct Network {
     this: Weak<Mutex<Self>>,
     me: Client,
+
     listener: Arc<TcpListener>,
     peers: Vec<Arc<Mutex<Peer>>>,
     blockchain: Arc<Mutex<BlockChain>>,
+
+    config: NetworkConfig,
 }
 
 impl Network {
+    pub fn get_config(&mut self) -> &mut NetworkConfig {
+        &mut self.config
+    }
+
+    pub fn get_me(&self) -> &Client {
+        &self.me
+    }
+
+    pub fn get_blockchain(&self) -> &Arc<Mutex<BlockChain>> {
+        &self.blockchain
+    }
+
     pub async fn new(blockchain: Arc<Mutex<BlockChain>>) -> Arc<Mutex<Self>> {
         let listener = TcpListener::bind("0.0.0.0:6767")
             .await
@@ -42,6 +62,7 @@ impl Network {
             listener: Arc::new(listener),
             peers: Vec::default(),
             blockchain,
+            config: NetworkConfig::default(),
         }));
         this.lock()
             .await

@@ -8,3 +8,13 @@ pub struct Transaction {
     to: Client,
     amount: u32,
 }
+
+impl Transaction {
+    pub fn new(from: Client, to: Client, amount: u32) -> Self {
+        Self {
+            from,
+            to,
+            amount,
+        }
+    }
+}

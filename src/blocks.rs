@@ -84,6 +84,19 @@ impl BlockChain {
         }
     }
 
+    pub fn new_block(&self, trans: Transaction) -> Block {
+        let mut hasher = DefaultHasher::new();
+        Block::new(
+            self.blocks
+                .last()
+                .map(|b| {
+                    b.hash(&mut hasher);
+                    hasher.finish()
+                }),
+            trans,
+        )
+    }
+
     pub fn store(&mut self, block: Block) {
         // TODO: verify blocks
         self.blocks

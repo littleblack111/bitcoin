@@ -1,7 +1,11 @@
-use std::{sync::Arc, time::Duration};
+use std::{io, sync::Arc};
 
 use bitcoin::{blocks::BlockChain, network::Network};
 use tokio::sync::Mutex;
+
+use crate::ui::Ui;
+
+pub mod ui;
 
 #[tokio::main]
 async fn main() {
@@ -16,5 +20,25 @@ async fn main() {
         .await
         .broadcast(bitcoin::network::Request::Ibd(None))
         .await;
-    tokio::time::sleep(Duration::from_secs(100)).await;
+    let n = network
+        .lock()
+        .await;
+    let mut binding = network
+        .lock()
+        .await;
+    let mut ui = Ui::new(
+        binding.get_config(),
+        n.get_blockchain()
+            .clone(),
+        n.get_me(),
+    );
+    loop {
+        let mut cmd = String::new();
+        io::stdin()
+            .read_line(&mut cmd)
+            .unwrap();
+
+        ui.cmd(&cmd)
+            .await;
+    }
 }
