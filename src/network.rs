@@ -107,10 +107,11 @@ impl Network {
                 let peer = Arc::new(Mutex::new(Peer::new(this.clone(), stream)));
 
                 if let Some(parent) = this.upgrade() {
-                    let mut net = parent
+                    let mut parent = parent
                         .lock()
                         .await;
-                    net.peers
+                    parent
+                        .peers
                         .push(Arc::clone(&peer));
                 }
 
@@ -130,10 +131,29 @@ impl Network {
             .clone();
         spawn(async move {
             if let Some(parent) = this.upgrade() {
-                let mut net = parent
+                let mut parent = parent
                     .lock()
                     .await;
-                net.try_peer()
+                parent
+                    .try_peer()
+                    .await;
+            }
+        });
+
+        self.get_idb()
+    }
+
+    pub fn get_idb(&self) {
+        let this = self
+            .this
+            .clone();
+        spawn(async move {
+            if let Some(parent) = this.upgrade() {
+                let mut parent = parent
+                    .lock()
+                    .await;
+                parent
+                    .broadcast(Request::Ibd(None))
                     .await;
             }
         });
@@ -177,7 +197,15 @@ impl Peer {
         }
     }
 
-    async fn start(&mut self) {}
+    async fn start(&mut self) {
+        let mut sink = self
+            .sink
+            .lock()
+            .await;
+        let _ = sink
+            .send(Request::Ibd(None))
+            .await;
+    }
 
     async fn read_loop(parent: Weak<Mutex<Network>>, mut stream: SplitStream<Framed<TokioFramed<TcpStream, LengthDelimitedCodec>, Request, Request, Json<Request, Request>>>) {
         loop {
