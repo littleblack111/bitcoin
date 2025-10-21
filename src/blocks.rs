@@ -74,7 +74,7 @@ impl Hash for Block {
 
 #[derive(Default, Deserialize, Serialize, Clone, PartialEq)]
 pub struct BlockChain {
-    blocks: Vec<Block>,
+    pub blocks: Vec<Block>,
 }
 
 impl BlockChain {

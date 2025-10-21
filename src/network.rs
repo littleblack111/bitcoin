@@ -231,7 +231,25 @@ impl Peer {
                     let parent = parent
                         .lock()
                         .await;
-                    if *parent
+                    let mut self_bc = parent
+                        .blockchain
+                        .lock()
+                        .await;
+                    if self_bc.is_empty()
+                        || (self_bc
+                            .blocks
+                            .iter()
+                            .fold(true, |i, b| {
+                                if i {
+                                    b.pow
+                                        .is_none()
+                                } else {
+                                    false
+                                }
+                            }))
+                    {
+                        *self_bc = bc;
+                    } else if *parent
                         .blockchain
                         .lock()
                         .await
