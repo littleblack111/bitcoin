@@ -1,23 +1,16 @@
-use std::sync::{Arc, Weak};
+use std::sync::Arc;
 
-use bitcoin::{
-    blocks::{Block, BlockChain},
-    client::Client,
-    network::{Network, NetworkConfig, Request},
-    transaction::Transaction,
-};
+use bitcoin::{blocks::BlockChain, client::Client, network::Request, transaction::Transaction};
 use tokio::sync::Mutex;
 
-pub struct Ui<'a> {
-    network_config: &'a mut NetworkConfig,
+pub struct Ui {
     blockchain: Arc<Mutex<BlockChain>>,
-    me: &'a Client,
+    me: Client,
 }
 
-impl<'a> Ui<'a> {
-    pub fn new(network_config: &'a mut NetworkConfig, blockchain: Arc<Mutex<BlockChain>>, me: &'a Client) -> Self {
+impl Ui {
+    pub fn new(blockchain: Arc<Mutex<BlockChain>>, me: Client) -> Self {
         Self {
-            network_config,
             blockchain,
             me,
         }
@@ -30,7 +23,7 @@ impl<'a> Ui<'a> {
             .collect();
         if cmd[0] == "trans" {
             let trans = Transaction::new(
-                *self.me,
+                self.me,
                 Client::new(
                     cmd[1]
                         .parse()

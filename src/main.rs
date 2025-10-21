@@ -11,34 +11,50 @@ pub mod ui;
 async fn main() {
     let bc = Arc::new(Mutex::new(BlockChain::default()));
     let network = Network::new(bc).await;
-    network
-        .lock()
-        .await
-        .start();
-    network
-        .lock()
-        .await
-        .broadcast(bitcoin::network::Request::Ibd(None))
-        .await;
-    let n = network
-        .lock()
-        .await;
-    let mut binding = network
-        .lock()
-        .await;
-    let mut ui = Ui::new(
-        binding.get_config(),
-        n.get_blockchain()
-            .clone(),
-        n.get_me(),
-    );
+
+    {
+        let net = network
+            .lock()
+            .await;
+        net.start();
+    }
+
+    {
+        let mut net = network
+            .lock()
+            .await;
+        net.broadcast(bitcoin::network::Request::Ibd(None))
+            .await;
+    }
+
+    let (blockchain, me) = {
+        let net = network
+            .lock()
+            .await;
+        (
+            net.get_blockchain()
+                .clone(),
+            *net.get_me(),
+        )
+    };
+
+    let mut ui = Ui::new(blockchain, me);
+
     loop {
         let mut cmd = String::new();
         io::stdin()
             .read_line(&mut cmd)
             .unwrap();
 
-        ui.cmd(&cmd)
-            .await;
+        if let Some(req) = ui
+            .cmd(&cmd)
+            .await
+        {
+            let mut net = network
+                .lock()
+                .await;
+            net.broadcast(req)
+                .await;
+        }
     }
 }
