@@ -1,6 +1,9 @@
 use std::{io, sync::Arc};
 
-use bitcoin::{blocks::BlockChain, network::Network};
+use bitcoin::{
+    blocks::BlockChain,
+    network::{Network, Request},
+};
 use tokio::sync::Mutex;
 
 use crate::ui::Ui;
@@ -19,13 +22,7 @@ async fn main() {
         net.start();
     }
 
-    {
-        let mut net = network
-            .lock()
-            .await;
-        net.broadcast(bitcoin::network::Request::Ibd(None))
-            .await;
-    }
+    Network::broadcast(network.clone(), Request::Ibd(None)).await;
 
     let (blockchain, me) = {
         let net = network
@@ -50,11 +47,7 @@ async fn main() {
             .cmd(&cmd)
             .await
         {
-            let mut net = network
-                .lock()
-                .await;
-            net.broadcast(req)
-                .await;
+            Network::broadcast(network.clone(), req).await;
         }
     }
 }

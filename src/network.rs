@@ -19,6 +19,7 @@ use crate::{
 };
 
 #[derive(Deserialize, Serialize, Clone)]
+// Make possible to take borrowed so we dont need to clone everything
 pub enum Request {
     Block(Block),
     Ibd(Option<BlockChain>),
@@ -71,17 +72,18 @@ impl Network {
         this
     }
 
-    async fn try_peer(&mut self) {
-        let peer = Arc::new(Mutex::new(Peer::new(
-            self.this
-                .clone(),
-            TcpStream::connect("192.168.1.16:6767")
+    async fn try_peer(this: Weak<Mutex<Self>>) {
+        let stream = TcpStream::connect("192.168.1.16:6767")
+            .await
+            .unwrap();
+        let peer = Arc::new(Mutex::new(Peer::new(this.clone(), stream)));
+        if let Some(parent) = this.upgrade() {
+            parent
+                .lock()
                 .await
-                .unwrap(),
-        )));
-        self.peers
-            .push(Arc::clone(&peer));
-
+                .peers
+                .push(Arc::clone(&peer));
+        }
         spawn(async move {
             peer.lock()
                 .await
@@ -130,14 +132,7 @@ impl Network {
             .this
             .clone();
         spawn(async move {
-            if let Some(parent) = this.upgrade() {
-                let mut parent = parent
-                    .lock()
-                    .await;
-                parent
-                    .try_peer()
-                    .await;
-            }
+            Network::try_peer(this).await;
         });
 
         self.get_idb()
@@ -149,18 +144,21 @@ impl Network {
             .clone();
         spawn(async move {
             if let Some(parent) = this.upgrade() {
-                let mut parent = parent
-                    .lock()
-                    .await;
-                parent
-                    .broadcast(Request::Ibd(None))
-                    .await;
+                Network::broadcast(parent, Request::Ibd(None)).await;
             }
         });
     }
 
-    pub async fn broadcast(&mut self, data: Request) {
-        for p in &self.peers {
+    pub async fn broadcast(this: Arc<Mutex<Self>>, data: Request) {
+        let peers: Vec<Arc<Mutex<Peer>>> = {
+            let guard = this
+                .lock()
+                .await;
+            guard
+                .peers
+                .clone()
+        };
+        for p in peers {
             let sink = {
                 let peer = p
                     .lock()
@@ -228,42 +226,57 @@ impl Peer {
                     .is_some()
                 {
                     if !block.verify_pow() {
-                        eprintln!("Rejecting remote block, POW verification failed"); // TODO: log remote IP
+                        eprintln!("Rejecting remote block, POW verification failed");
                         return;
                     }
                     println!("Accepting and storing remote block: {:?}", block);
-                    parent
+                    let network = parent
                         .upgrade()
-                        .unwrap()
-                        .lock()
-                        .await
-                        .blockchain
-                        .lock()
+                        .unwrap();
+                    let bc = {
+                        network
+                            .lock()
+                            .await
+                            .blockchain
+                            .clone()
+                    };
+                    bc.lock()
                         .await
                         .store(block)
                 } else {
                     block.calc_set_pow();
-                    let parent = parent
+                    let network = parent
                         .upgrade()
                         .unwrap();
-                    let mut parent = parent
-                        .lock()
-                        .await;
-                    parent
-                        .broadcast(Request::Block(block))
-                        .await;
+                    {
+                        let self_bc = {
+                            network
+                                .lock()
+                                .await
+                                .blockchain
+                                .clone()
+                        };
+                        self_bc
+                            .lock()
+                            .await
+                            .store(block.clone());
+                    }
+                    Network::broadcast(network, Request::Block(block)).await;
                 }
             }
             Request::Ibd(bc) => match bc {
                 Some(bc) => {
-                    let parent = parent
+                    let network = parent
                         .upgrade()
                         .unwrap();
-                    let parent = parent
-                        .lock()
-                        .await;
-                    let mut self_bc = parent
-                        .blockchain
+                    let self_bc = {
+                        network
+                            .lock()
+                            .await
+                            .blockchain
+                            .clone()
+                    };
+                    let mut self_bc = self_bc
                         .lock()
                         .await;
                     if self_bc.is_empty()
@@ -280,35 +293,30 @@ impl Peer {
                                 }
                             }))
                     {
+                        println!("Setting IBD to {:?} from remote", bc);
                         *self_bc = bc;
-                    } else if *parent
-                        .blockchain
-                        .lock()
-                        .await
-                        != bc
-                    {
-                        // TODO: maybe queue and see if everybody else's blockchain match and is
-                        // verified and has more block
-                        eprintln!("Remote IBD broadcast did not match ours")
+                    } else if *self_bc != bc {
+                        eprintln!("Remote IBD broadcast did not match ours, {:?} vs. {:?}", bc, self_bc);
                     }
                 }
                 None => {
-                    let parent = parent
+                    let network = parent
                         .upgrade()
                         .unwrap();
-                    let mut parent = parent
-                        .lock()
-                        .await;
                     let bc = {
-                        let guard = parent
-                            .blockchain
+                        let bc = {
+                            network
+                                .lock()
+                                .await
+                                .blockchain
+                                .clone()
+                        };
+                        let guard = bc
                             .lock()
                             .await;
                         guard.clone()
                     };
-                    parent
-                        .broadcast(Request::Ibd(Some(bc)))
-                        .await;
+                    Network::broadcast(network, Request::Ibd(Some(bc))).await;
                 }
             },
         }

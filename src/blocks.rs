@@ -49,6 +49,7 @@ impl Block {
     fn calc_pow(&self) -> u64 {
         for i in 0.. {
             // reset every loop
+            println!("{i}");
             let mut hasher = Sha256::new();
             Digest::update(&mut hasher, bincode::encode_to_vec((&self.prev_hash, &self.trans, i), bincode::config::standard()).unwrap());
             let hashed = hasher.finalize();
