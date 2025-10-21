@@ -1,7 +1,7 @@
 use rand::Rng;
 use serde::{Deserialize, Serialize};
 
-#[derive(Hash, Deserialize, Serialize, Clone, Copy)]
+#[derive(Hash, Deserialize, Serialize, Clone, Copy, PartialEq)]
 pub struct Client {
     id: u32,
 }

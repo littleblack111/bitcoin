@@ -58,7 +58,7 @@ impl Network {
                 .unwrap(),
         )));
         self.peers
-            .push(peer.clone());
+            .push(Arc::clone(&peer));
 
         spawn(async move {
             peer.lock()
@@ -136,7 +136,6 @@ struct Peer {
 
 impl Peer {
     fn new(parent: Weak<Mutex<Network>>, stream: TcpStream) -> Self {
-        eprintln!("a");
         Self {
             parent,
             framed: Framed::new(TokioFramed::new(stream, LengthDelimitedCodec::new()), Json::default()),
@@ -150,7 +149,6 @@ impl Peer {
                 .next()
                 .await
             {
-                eprintln!("a");
                 self.handle(req.unwrap())
                     .await;
             }
@@ -160,16 +158,21 @@ impl Peer {
     async fn handle(&mut self, req: Request) {
         match req {
             Request::Block(mut block) => match block.pow {
-                Some(_) => self
-                    .parent
-                    .upgrade()
-                    .unwrap()
-                    .lock()
-                    .await
-                    .blockchain
-                    .lock()
-                    .await
-                    .store(block),
+                Some(pow) => {
+                    if !block.verify_pow(pow) {
+                        eprintln!("Rejecting remote block, POW verification failed"); // TODO: log remote IP
+                        return;
+                    }
+                    self.parent
+                        .upgrade()
+                        .unwrap()
+                        .lock()
+                        .await
+                        .blockchain
+                        .lock()
+                        .await
+                        .store(block)
+                }
                 None => {
                     block.calc_set_pow();
                     let parent = self
@@ -184,7 +187,7 @@ impl Peer {
                 }
             },
             Request::Ibd(bc) => match bc {
-                Some(_bc) => {
+                Some(bc) => {
                     let parent = self
                         .parent
                         .upgrade()
@@ -192,10 +195,16 @@ impl Peer {
                     let net = parent
                         .lock()
                         .await;
-                    let mut _bc_lock = net
+                    let mut self_bc = net
                         .blockchain
                         .lock()
                         .await;
+                    // verify if our blocks match theirs
+                    if *self_bc != bc {
+                        eprintln!("Remote IBD broadcast did not match ours") // TODO: log IP of sender
+                        // TODO: verify POWs, prev_hash of theirs(check missing), verify our POWs and if they have more blocks if their's all correct
+                        // TODO: maybe queue and see if everybody else's blockchain match and is verified and has more block
+                    }
                 }
                 None => {
                     let parent = self

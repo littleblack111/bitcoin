@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::{ZERO_PREFIX_AMOUNT, transaction::Transaction};
 
-#[derive(Deserialize, Serialize, Clone, Copy)]
+#[derive(Deserialize, Serialize, Clone, Copy, PartialEq)]
 pub struct Block {
     pub prev_hash: u64,
     pub trans: Transaction,
@@ -42,6 +42,19 @@ impl Block {
         unreachable!()
     }
 
+    pub fn verify_pow(&mut self, pow: u64) -> bool {
+        let mut hasher = DefaultHasher::new();
+        (&self.prev_hash, &self.trans, pow).hash(&mut hasher);
+        hasher
+            .finish()
+            .to_string()
+            .to_string()
+            .starts_with(
+                &"0".repeat(ZERO_PREFIX_AMOUNT)
+                    .to_string(),
+            )
+    }
+
     pub fn calc_set_pow(&mut self) {
         self.pow = Some(self.calc_pow());
     }
@@ -65,7 +78,7 @@ impl Hash for Block {
     }
 }
 
-#[derive(Default, Deserialize, Serialize, Clone)]
+#[derive(Default, Deserialize, Serialize, Clone, PartialEq)]
 pub struct BlockChain {
     blocks: Vec<Block>,
 }
