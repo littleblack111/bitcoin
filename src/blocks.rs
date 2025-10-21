@@ -58,10 +58,14 @@ impl Block {
         unreachable!()
     }
 
-    pub fn verify_pow(&mut self) -> bool {
-        let mut hasher = Sha256::new();
-        Digest::update(&mut hasher, bincode::encode_to_vec(&*self, bincode::config::standard()).unwrap());
-        Self::pref_zeros(&hasher.finalize()).is_ok()
+    pub fn verify_pow(&self) -> bool {
+        if let Some(nonce) = self.pow {
+            let mut hasher = Sha256::new();
+            Digest::update(&mut hasher, bincode::encode_to_vec((&self.prev_hash, &self.trans, nonce), bincode::config::standard()).unwrap());
+            Self::pref_zeros(&hasher.finalize()).is_ok()
+        } else {
+            false
+        }
     }
 
     pub fn calc_set_pow(&mut self) {
