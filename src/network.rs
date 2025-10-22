@@ -4,13 +4,16 @@ use std::sync::{Arc, Weak};
 
 use serde::{Deserialize, Serialize};
 
-use futures::stream::{SplitSink, SplitStream};
+use futures::stream::SplitStream;
 use futures::{SinkExt, StreamExt};
 use tokio::net::ToSocketAddrs;
 use tokio::{
     net::{TcpListener, TcpStream},
     spawn,
-    sync::Mutex,
+    sync::{
+        Mutex,
+        mpsc::{UnboundedSender, unbounded_channel},
+    },
 };
 use tokio_serde::{Framed, formats::Json};
 use tokio_util::codec::Framed as TokioFramed;
@@ -37,7 +40,7 @@ pub struct NetworkConfig {
 pub struct Network {
     me: Client,
     listener: Arc<TcpListener>,
-    pub peers: Vec<Arc<Mutex<Peer>>>,
+    pub peers: Vec<Peer>,
     blockchain: Arc<Mutex<BlockChain>>,
     config: NetworkConfig,
 }
@@ -71,28 +74,14 @@ impl Network {
             .await
             .unwrap();
         let weak = Arc::downgrade(&this);
-        let peer = Arc::new(Mutex::new(Peer::new(weak, stream)));
+        let peer = Peer::new(weak, stream);
+        peer.start();
         {
             this.lock()
                 .await
                 .peers
-                .push(Arc::clone(&peer));
+                .push(peer);
         }
-        let peer2 = Arc::clone(&peer);
-        spawn(async move {
-            peer2
-                .lock()
-                .await
-                .start()
-                .await;
-        });
-        let peer2 = Arc::clone(&peer);
-        spawn(async move {
-            let mut guard = peer2
-                .lock()
-                .await;
-            let _ = Network::write(&mut guard, Request::Ibd(None)).await;
-        });
     }
 
     pub fn start(this: Arc<Mutex<Self>>) {
@@ -110,24 +99,16 @@ impl Network {
                     .accept()
                     .await
                     .unwrap();
-                let peer = Arc::new(Mutex::new(Peer::new(Arc::downgrade(&this_accept), stream)));
+                let peer = Peer::new(Arc::downgrade(&this_accept), stream);
+                peer.start();
                 {
                     let mut parent = this_accept
                         .lock()
                         .await;
                     parent
                         .peers
-                        .push(Arc::clone(&peer));
+                        .push(peer);
                 }
-                spawn({
-                    let peer = Arc::clone(&peer);
-                    async move {
-                        peer.lock()
-                            .await
-                            .start()
-                            .await;
-                    }
-                });
             }
         });
         let this_connect = this.clone();
@@ -156,36 +137,24 @@ impl Network {
     }
 
     pub async fn broadcast(this: Arc<Mutex<Self>>, data: Request) {
-        let peers: Vec<Arc<Mutex<Peer>>> = {
+        let peers: Vec<UnboundedSender<Request>> = {
             this.lock()
                 .await
                 .peers
-                .clone()
+                .iter()
+                .map(|p| {
+                    p.tx.clone()
+                })
+                .collect()
         };
-        for p in peers {
-            _ = p
-                .lock()
-                .await
-                .sink
-                .lock()
-                .await
-                .send(data.clone())
-                .await;
+        for tx in peers {
+            let _ = tx.send(data.clone());
         }
-    }
-
-    async fn write(peer: &mut Peer, data: Request) -> Result<(), std::io::Error> {
-        let mut sink = peer
-            .sink
-            .lock()
-            .await;
-        sink.send(data.clone())
-            .await
     }
 }
 
 pub struct Peer {
-    sink: Arc<Mutex<SplitSink<Framed<TokioFramed<TcpStream, LengthDelimitedCodec>, Request, Request, Json<Request, Request>>, Request>>>,
+    tx: UnboundedSender<Request>,
     addr: SocketAddr,
 }
 
@@ -213,24 +182,31 @@ impl Peer {
             .unwrap();
         let framed = Framed::new(TokioFramed::new(stream, LengthDelimitedCodec::new()), Json::default());
         let (sink, stream) = framed.split();
-        let sink = Arc::new(Mutex::new(sink));
+        let (tx, mut rx) = unbounded_channel();
+        spawn(async move {
+            let mut sink = sink;
+            while let Some(msg) = rx
+                .recv()
+                .await
+            {
+                let _ = sink
+                    .send(msg)
+                    .await;
+            }
+        });
         spawn(async move {
             Peer::read_loop(parent, stream).await;
         });
         Self {
-            sink,
+            tx,
             addr,
         }
     }
 
-    async fn start(&mut self) {
-        let mut sink = self
-            .sink
-            .lock()
-            .await;
-        let _ = sink
-            .send(Request::Ibd(None))
-            .await;
+    fn start(&self) {
+        let _ = self
+            .tx
+            .send(Request::Ibd(None));
     }
 
     async fn read_loop(parent: Weak<Mutex<Network>>, mut stream: SplitStream<Framed<TokioFramed<TcpStream, LengthDelimitedCodec>, Request, Request, Json<Request, Request>>>) {
