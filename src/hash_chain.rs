@@ -1,13 +1,31 @@
 use std::ops::Deref;
 
 use bincode::Encode;
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 
+#[derive(Debug, PartialEq, Deserialize, Serialize, Clone)]
 pub struct HashChain<T: Encode> {
     data: Vec<(Vec<u8>, T)>, // Vector of (hash, value) pairs
 }
 
+impl<T: Encode> Default for HashChain<T> {
+    fn default() -> Self {
+        Self {
+            data: Default::default(),
+        }
+    }
+}
+
 impl<T: Encode> HashChain<T> {
+    pub fn new(data: Vec<T>) -> Self {
+        let mut this = Self::default();
+        for i in data {
+            this.push(i);
+        }
+        this
+    }
+
     fn push(&mut self, data: T) {
         let prev_hash = self
             .data
@@ -31,19 +49,18 @@ impl<T: Encode> HashChain<T> {
     }
 
     fn verify(&self, from_hash: &[u8]) -> bool {
-        let start_idx = self
+        let i = self
             .data
             .iter()
             .position(|x| x.0 == from_hash)
             .unwrap();
-        (start_idx
-            ..self
-                .data
-                .len())
+        (i..self
+            .data
+            .len())
             .all(|i| {
                 Self::hash(
                     if i == 0 {
-                        &Vec::default()
+                        &[]
                     } else {
                         &self.data[i - 1].0
                     },

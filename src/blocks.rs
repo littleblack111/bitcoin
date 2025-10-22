@@ -4,7 +4,11 @@ use std::ops::Deref;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{ZERO_PREFIX_AMOUNT, transaction::Transaction};
+use crate::{
+    ZERO_PREFIX_AMOUNT,
+    hash_chain::{self, HashChain},
+    transaction::Transaction,
+};
 
 use std::sync::{
     Arc,
@@ -29,7 +33,7 @@ impl Block {
         Self {
             prev_hash: prev_hash
                 .unwrap_or(&[])
-                .to_vec(), // special blocks
+                .to_vec(),
             trans,
             pow: None,
         }
@@ -79,7 +83,6 @@ impl Block {
                         }
                         break;
                     }
-                    println!("{i}");
                     i = i.wrapping_add(step);
                 }
             });
@@ -120,13 +123,13 @@ impl CryptoDigest for Block {
 
 #[derive(Debug, Default, Deserialize, Serialize, Clone, PartialEq)]
 pub struct BlockChain {
-    pub blocks: Vec<Block>,
+    pub blocks: HashChain<Block>,
 }
 
 impl BlockChain {
     pub fn new(blocks: Vec<Block>) -> Self {
         Self {
-            blocks,
+            blocks: HashChain::new(blocks),
         }
     }
 
