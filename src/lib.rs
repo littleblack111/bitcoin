@@ -1,3 +1,5 @@
+pub mod hash_chain;
+
 pub mod blocks;
 
 pub mod transaction;
