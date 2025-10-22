@@ -4,11 +4,7 @@ use std::ops::Deref;
 
 use serde::{Deserialize, Serialize};
 
-use crate::{
-    ZERO_PREFIX_AMOUNT,
-    hash_chain::{self, HashChain},
-    transaction::Transaction,
-};
+use crate::{ZERO_PREFIX_AMOUNT, hash_chain::HashChain, transaction::Transaction};
 
 use std::sync::{
     Arc,
@@ -134,17 +130,15 @@ impl BlockChain {
     }
 
     pub fn new_block(&self, trans: Transaction) -> Block {
-        let mut hasher = Sha256::new();
         let prev = self
             .blocks
             .last();
         let prev_hash = if let Some(b) = prev {
-            b.digest(&mut hasher);
-            Some(&*hasher.finalize())
+            Some(HashChain::hash_o_item(b))
         } else {
             None
         };
-        Block::new(prev_hash, trans)
+        Block::new(prev_hash.as_deref(), trans)
     }
 
     pub fn store(&mut self, block: Block) {
@@ -159,7 +153,7 @@ impl BlockChain {
 }
 
 impl Deref for BlockChain {
-    type Target = Vec<Block>;
+    type Target = HashChain<Block>;
 
     fn deref(&self) -> &Self::Target {
         &self.blocks

@@ -286,7 +286,7 @@ impl Peer {
                             // TODO: Optimize via try_fold
                             .fold(true, |i, b| {
                                 if i {
-                                    b.pow
+                                    b.1.pow
                                         .is_none()
                                 } else {
                                     false

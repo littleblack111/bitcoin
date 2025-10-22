@@ -26,7 +26,7 @@ impl<T: Encode> HashChain<T> {
         this
     }
 
-    fn push(&mut self, data: T) {
+    pub fn push(&mut self, data: T) {
         let prev_hash = self
             .data
             .last()
@@ -40,7 +40,7 @@ impl<T: Encode> HashChain<T> {
 
     // TODO: make try_last that does same as this but returns Err() if it's not the
     // last one and/or refuse to insert
-    fn insert(&mut self, data: T, base_hash: &Vec<u8>) {
+    pub fn insert(&mut self, data: T, base_hash: &Vec<u8>) {
         let pos = self
             .data
             .iter()
@@ -53,7 +53,7 @@ impl<T: Encode> HashChain<T> {
         self.rehash(&base_hash);
     }
 
-    fn verify(&self, until_hash: &[u8]) -> bool {
+    pub fn verify(&self, until_hash: &[u8]) -> bool {
         let pos = self
             .data
             .iter()
@@ -68,7 +68,7 @@ impl<T: Encode> HashChain<T> {
             })
     }
 
-    fn rehash(&mut self, from_hash: &[u8]) {
+    pub fn rehash(&mut self, from_hash: &[u8]) {
         let pos = self
             .data
             .iter()
