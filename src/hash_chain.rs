@@ -63,10 +63,7 @@ impl<T: Encode> HashChain<T> {
             .iter()
             .enumerate()
             .all(|(prev_hash, (pred_prev_hash, _))| {
-                let prev_hash = Self::hash_item({
-                    let prev_hash = &self.data[prev_hash - 1];
-                    (&prev_hash.0, &prev_hash.1)
-                });
+                let prev_hash = Self::hash_o_item(&self.data[prev_hash - 1]);
                 prev_hash == *pred_prev_hash
             })
     }
@@ -81,12 +78,7 @@ impl<T: Encode> HashChain<T> {
         let prev_hashes: Vec<_> = (pos..self
             .data
             .len())
-            .map(|i| {
-                Self::hash_item({
-                    let prev_hash = &self.data[i - 1];
-                    (&prev_hash.0, &prev_hash.1)
-                })
-            })
+            .map(|i| Self::hash_o_item(&self.data[i - 1]))
             .collect();
 
         self.data[pos..]
@@ -100,12 +92,16 @@ impl<T: Encode> HashChain<T> {
             });
     }
 
-    fn hash_item(data: (&Vec<u8>, &T)) -> Vec<u8> {
+    pub fn hash_item(data: (&Vec<u8>, &T)) -> Vec<u8> {
         let mut hasher = Sha256::new();
         hasher.update(bincode::encode_to_vec(data, bincode::config::standard()).unwrap());
         hasher
             .finalize()
             .to_vec()
+    }
+
+    pub fn hash_o_item(data: &(Vec<u8>, T)) -> Vec<u8> {
+        Self::hash_item((&data.0, &data.1))
     }
 }
 
