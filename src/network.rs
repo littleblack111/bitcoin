@@ -113,7 +113,7 @@ impl Network {
         });
         let this_connect = this.clone();
         spawn(async move {
-            Network::try_peer(this_connect, "192.168.1.16:6767").await;
+            Network::try_peer(this_connect, "192.168.1.11:6767").await;
         });
         Network::get_idb(this);
     }

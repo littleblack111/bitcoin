@@ -54,45 +54,44 @@ impl Block {
             .map(|n| n.get())
             .unwrap_or(4); // TODO: config
 
+        let found = Arc::new(AtomicBool::new(false));
         let (tx, mut rx) = mpsc::unbounded_channel::<u64>();
         let prev_hash = Arc::new(
             self.prev_hash
                 .clone(),
         );
         let trans = self.trans;
-        let mut handles = Vec::with_capacity(threads);
         for t in 0..threads {
             let tx = tx.clone();
             let prev_hash = Arc::clone(&prev_hash);
             let step = threads as u64;
-            handles.push(task::spawn_blocking(move || {
+            let found = found.clone();
+
+            task::spawn_blocking(move || {
                 let mut i = t as u64;
-                loop {
+                while !found.load(Ordering::Relaxed) {
                     let mut hasher = Sha256::new();
                     Digest::update(&mut hasher, bincode::encode_to_vec((&*prev_hash, &trans, i), bincode::config::standard()).unwrap());
                     let hashed = hasher.finalize();
                     if Self::pref_zeros(&hashed).is_ok() {
-                        _ = tx.send(i);
+                        if !found.swap(true, Ordering::Relaxed) {
+                            _ = tx.send(i);
+                        }
                         break;
                     }
                     println!("{i}");
                     i = i.wrapping_add(step);
                 }
-            }));
+            });
         }
 
-        drop(tx);
+        // for h in handles {
+        //     h.abort(); // h.join();
+        // }
 
-        let nonce = rx
-            .recv()
+        rx.recv() // blocking
             .await
-            .expect("miner dropped without sending");
-
-        for h in handles {
-            h.abort();
-        }
-
-        nonce
+            .expect("miner dropped without sending")
     }
 
     pub async fn calc_set_pow(&mut self) {
