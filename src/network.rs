@@ -113,7 +113,7 @@ impl Network {
         });
         let this_connect = this.clone();
         spawn(async move {
-            Network::try_peer(this_connect, "192.168.1.11:6767").await;
+            Network::try_peer(this_connect, "192.168.1.16:6767").await;
         });
         Network::get_idb(this);
     }
@@ -124,7 +124,7 @@ impl Network {
         });
     }
 
-    pub async fn new_block(this: Arc<Mutex<Self>>, tx: Transaction) -> Block {
+    pub async fn new_block(this: Arc<Mutex<Self>>, trans: Transaction) -> Block {
         let bc = {
             this.lock()
                 .await
@@ -133,7 +133,7 @@ impl Network {
         };
         bc.lock()
             .await
-            .new_block(tx)
+            .new_block(trans)
     }
 
     pub async fn broadcast(this: Arc<Mutex<Self>>, data: Request) {
@@ -247,7 +247,7 @@ impl Peer {
                         .await
                         .store((*block).clone())
                 } else {
-                    println!("Mining new block for transaction: {:#?}", block.tx);
+                    println!("Mining new block for transaction: {:#?}", block.trans);
                     let mut mine = (*block).clone();
                     mine.calc_set_pow()
                         .await;

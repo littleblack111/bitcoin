@@ -20,17 +20,17 @@ pub trait CryptoDigest {
 #[derive(Debug, Deserialize, Serialize, Clone, PartialEq, Encode)]
 pub struct Block {
     pub prev_hash: Vec<u8>,
-    pub tx: Transaction,
+    pub trans: Transaction,
     pub pow: Option<u64>,
 }
 
 impl Block {
-    fn new(prev_hash: Option<&[u8]>, tx: Transaction) -> Self {
+    fn new(prev_hash: Option<&[u8]>, trans: Transaction) -> Self {
         Self {
             prev_hash: prev_hash
                 .unwrap_or(&[])
                 .to_vec(), // special blocks
-            tx,
+            trans,
             pow: None,
         }
     }
@@ -55,45 +55,47 @@ impl Block {
             .unwrap_or(4); // TODO: config
 
         let found = Arc::new(AtomicBool::new(false));
-        let (ptx, mut rx) = mpsc::unbounded_channel::<u64>();
+        let (tx, mut rx) = mpsc::unbounded_channel::<u64>();
         let prev_hash = Arc::new(
             self.prev_hash
                 .clone(),
         );
-        let tx = self.tx;
+        let trans = self.trans;
         let mut handles = Vec::with_capacity(threads);
         let threads = threads as u64;
         for t in 0..threads {
             let found = Arc::clone(&found);
-            let ptx = ptx.clone();
+            let tx = tx.clone();
             let prev_hash = Arc::clone(&prev_hash);
+            let step = threads as u64;
+            let start = t as u64;
             handles.push(task::spawn_blocking(move || {
                 let mut i = t;
                 while !found.load(Ordering::Relaxed) {
                     let mut hasher = Sha256::new();
-                    Digest::update(&mut hasher, bincode::encode_to_vec((&*prev_hash, &tx, i), bincode::config::standard()).unwrap());
+                    Digest::update(&mut hasher, bincode::encode_to_vec((&*prev_hash, &trans, i), bincode::config::standard()).unwrap());
                     let hashed = hasher.finalize();
                     if Self::pref_zeros(&hashed).is_ok() {
                         if !found.swap(true, Ordering::Relaxed) {
-                            _ = ptx.send(i);
+                            _ = tx.send(i);
                         }
                         break;
                     }
                     println!("{i}");
-                    i = i.wrapping_add(threads);
+                    i = i.wrapping_add(step);
                 }
             }));
         }
-
-        let pow_nonce = rx
+        drop(tx);
+        let nonce = rx
             .recv()
             .await
             .expect("miner dropped without sending");
 
         for h in handles {
-            _ = h.await;
+            let _ = h.await;
         }
-        pow_nonce
+        nonce
     }
 
     pub async fn calc_set_pow(&mut self) {
@@ -106,7 +108,7 @@ impl Block {
     pub fn verify_pow(&self) -> bool {
         if let Some(nonce) = self.pow {
             let mut hasher = Sha256::new();
-            Digest::update(&mut hasher, bincode::encode_to_vec((&self.prev_hash, &self.tx, nonce), bincode::config::standard()).unwrap());
+            Digest::update(&mut hasher, bincode::encode_to_vec((&self.prev_hash, &self.trans, nonce), bincode::config::standard()).unwrap());
             Self::pref_zeros(&hasher.finalize()).is_ok()
         } else {
             false
@@ -116,7 +118,7 @@ impl Block {
 
 impl CryptoDigest for Block {
     fn digest(&self, state: &mut impl DynDigest) {
-        state.update(&bincode::encode_to_vec((&self.prev_hash, &self.tx, &self.pow), bincode::config::standard()).unwrap());
+        state.update(&bincode::encode_to_vec((&self.prev_hash, &self.trans, &self.pow), bincode::config::standard()).unwrap());
     }
 }
 
@@ -132,7 +134,7 @@ impl BlockChain {
         }
     }
 
-    pub fn new_block(&self, tx: Transaction) -> Block {
+    pub fn new_block(&self, trans: Transaction) -> Block {
         let mut hasher = Sha256::new();
         let prev = self
             .blocks
@@ -143,7 +145,7 @@ impl BlockChain {
         } else {
             None
         };
-        Block::new(prev_hash, tx)
+        Block::new(prev_hash, trans)
     }
 
     pub fn store(&mut self, block: Block) {
