@@ -52,7 +52,8 @@ impl Block {
     pub async fn calc_pow(&self) -> u64 {
         let threads = std::thread::available_parallelism()
             .map(|n| n.get())
-            .unwrap_or(4);
+            .unwrap_or(4); // TODO: config
+
         let found = Arc::new(AtomicBool::new(false));
         let (ptx, mut rx) = mpsc::unbounded_channel::<u64>();
         let prev_hash = Arc::new(
@@ -61,35 +62,34 @@ impl Block {
         );
         let tx = self.tx;
         let mut handles = Vec::with_capacity(threads);
+        let threads = threads as u64;
         for t in 0..threads {
             let found = Arc::clone(&found);
             let ptx = ptx.clone();
             let prev_hash = Arc::clone(&prev_hash);
-            let start = t as u64;
             handles.push(task::spawn_blocking(move || {
-                let mut i = start;
+                let mut i = t;
                 while !found.load(Ordering::Relaxed) {
                     let mut hasher = Sha256::new();
                     Digest::update(&mut hasher, bincode::encode_to_vec((&*prev_hash, &tx, i), bincode::config::standard()).unwrap());
                     let hashed = hasher.finalize();
-                    if Block::pref_zeros(&hashed).is_ok() {
+                    if Self::pref_zeros(&hashed).is_ok() {
                         if !found.swap(true, Ordering::Relaxed) {
-                            let _ = ptx.send(i);
+                            _ = ptx.send(i);
                         }
                         break;
                     }
                     println!("{i}");
-                    i = i.wrapping_add(threads as u64);
+                    i = i.wrapping_add(threads);
                 }
             }));
         }
-
-        drop(ptx);
 
         let pow_nonce = rx
             .recv()
             .await
             .expect("miner dropped without sending");
+
         for h in handles {
             _ = h.await;
         }
