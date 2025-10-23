@@ -40,7 +40,7 @@ impl<T: Encode> HashChain<T> {
 
     // TODO: make try_last that does same as this but returns Err() if it's not the
     // last one and/or refuse to insert
-    pub fn insert(&mut self, data: T, base_hash: &Vec<u8>) {
+    pub fn insert(&mut self, data: T, base_hash: &[u8]) {
         let pos = self
             .data
             .iter()
@@ -53,7 +53,7 @@ impl<T: Encode> HashChain<T> {
         self.rehash(&base_hash);
     }
 
-    pub fn verify(&self, until_hash: Vec<u8>) -> bool {
+    pub fn verify(&self, until_hash: &[u8]) -> bool {
         let pos = self
             .data
             .iter()
@@ -92,7 +92,7 @@ impl<T: Encode> HashChain<T> {
             });
     }
 
-    pub fn hash_item(data: (&Vec<u8>, &T)) -> Vec<u8> {
+    pub fn hash_item(data: (&[u8], &T)) -> Vec<u8> {
         let mut hasher = Sha256::new();
         hasher.update(bincode::encode_to_vec(data, bincode::config::standard()).unwrap());
         hasher

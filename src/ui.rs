@@ -62,7 +62,7 @@ impl Ui {
             if let Some(cmd) = cmd.get(1) {
                 if *cmd == "verify" {
                     bc.verify(
-                        bc.last()
+                        &bc.last()
                             .unwrap()
                             .0
                             .clone(),
