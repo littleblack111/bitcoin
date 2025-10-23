@@ -56,11 +56,21 @@ impl Ui {
                     .get_blockchain()
                     .clone()
             };
-            println!(
-                "{:#?}",
-                bc.lock()
-                    .await
-            );
+            let bc = bc
+                .lock()
+                .await;
+            if let Some(cmd) = cmd.get(1) {
+                if *cmd == "verify" {
+                    bc.verify(
+                        bc.last()
+                            .unwrap()
+                            .0
+                            .clone(),
+                    );
+                }
+            } else {
+                println!("{:#?}", bc);
+            }
         }
 
         if cmd[0] == "peer" {

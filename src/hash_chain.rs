@@ -53,7 +53,7 @@ impl<T: Encode> HashChain<T> {
         self.rehash(&base_hash);
     }
 
-    pub fn verify(&self, until_hash: &[u8]) -> bool {
+    pub fn verify(&self, until_hash: Vec<u8>) -> bool {
         let pos = self
             .data
             .iter()
