@@ -59,13 +59,19 @@ impl<T: Encode> HashChain<T> {
             .iter()
             .position(|x| x.0 == until_hash)
             .unwrap();
-        self.data[pos..=1]
+
+        self.data
             .iter()
-            .enumerate()
-            .all(|(prev_hash, (pred_prev_hash, _))| {
-                let prev_hash = Self::hash_o_item(&self.data[prev_hash - 1]);
-                prev_hash == *pred_prev_hash
+            .take(pos + 1)
+            .try_fold(Vec::<u8>::new(), |prev, (hash, val)| {
+                let expected = Self::hash_item((&prev, val));
+                if *hash == expected {
+                    Ok(expected)
+                } else {
+                    Err(())
+                }
             })
+            .is_ok()
     }
 
     pub fn rehash(&mut self, from_hash: &[u8]) {
@@ -75,20 +81,18 @@ impl<T: Encode> HashChain<T> {
             .position(|x| x.0 == *from_hash)
             .unwrap();
 
-        let prev_hashes: Vec<_> = (pos..self
-            .data
-            .len())
-            .map(|i| Self::hash_o_item(&self.data[i - 1]))
-            .collect();
-
-        self.data[pos..]
+        let mut prev = self.data[pos]
+            .0
+            .clone();
+        self.data
             .iter_mut()
-            .enumerate()
-            .map(|(idx, item)| (item, prev_hashes[idx].clone()))
-            .for_each(|((pred_prev_hash, _), prev_hash)| {
-                if prev_hash != *pred_prev_hash {
-                    *pred_prev_hash = prev_hash;
+            .skip(pos + 1)
+            .for_each(|(hash, val)| {
+                let expected = Self::hash_item((&prev, val));
+                if *hash != expected {
+                    *hash = expected.clone();
                 }
+                prev = expected;
             });
     }
 

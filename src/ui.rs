@@ -25,6 +25,9 @@ impl Ui {
         let cmd: Vec<&str> = cmd
             .split_whitespace()
             .collect();
+        if cmd.is_empty() {
+            return None;
+        }
         if cmd[0] == "trans" {
             let trans = Transaction::new(
                 self.me,
