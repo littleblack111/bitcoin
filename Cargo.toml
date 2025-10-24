@@ -13,3 +13,11 @@ futures = "0.3.31"
 rand = "0.9.2"
 sha2 = "0.10.9"
 bincode = "2.0.1"
+
+[[bin]]
+name = "bitcoin-cli"
+path = "src/cli.rs"
+
+[[bin]]
+name = "bitcoin-gui"
+path = "src/gui.rs"

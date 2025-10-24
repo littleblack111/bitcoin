@@ -1,4 +1,8 @@
-use std::sync::{Arc, Weak};
+use crate::daemon::init;
+use std::{
+    io,
+    sync::{Arc, Weak},
+};
 
 use bitcoin::{
     client::Client,
@@ -6,6 +10,8 @@ use bitcoin::{
     transaction::Transaction,
 };
 use tokio::sync::Mutex;
+
+pub mod daemon;
 
 pub struct Ui {
     network: Weak<Mutex<Network>>,
@@ -95,5 +101,32 @@ impl Ui {
         }
 
         None
+    }
+}
+
+#[tokio::main]
+async fn main() {
+    let network = init().await;
+
+    let mut ui = Ui::new(
+        Arc::downgrade(&network),
+        *network
+            .lock()
+            .await
+            .get_me(),
+    );
+
+    loop {
+        let mut cmd = String::new();
+        io::stdin()
+            .read_line(&mut cmd)
+            .unwrap();
+
+        if let Some(req) = ui
+            .cmd(&cmd)
+            .await
+        {
+            Network::broadcast(network.clone(), req).await;
+        }
     }
 }
